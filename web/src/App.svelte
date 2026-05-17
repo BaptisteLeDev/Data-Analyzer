@@ -6,9 +6,10 @@
   import BirthsTab from "./lib/BirthsTab.svelte";
   import RaresNatTab from "./lib/RaresNatTab.svelte";
   import CandidatesTab from "./lib/CandidatesTab.svelte";
+  import IntlTab from "./lib/IntlTab.svelte";
   import { fetchRarest, fetchBirthContext, type RarestResponse, type BirthContext } from "./lib/api";
 
-  let tab = $state<"rares" | "rares_nat" | "candidates" | "births">("rares");
+  let tab = $state<"rares" | "rares_nat" | "candidates" | "intl" | "births">("rares");
 
   // ---- Prénoms rares state ----
   let year = $state(2006);
@@ -61,6 +62,7 @@
   <button class:active={tab === "rares"} onclick={() => tab = "rares"}>Prénoms rares (dept)</button>
   <button class:active={tab === "rares_nat"} onclick={() => tab = "rares_nat"}>Rares nationaux</button>
   <button class:active={tab === "candidates"} onclick={() => tab = "candidates"}>Candidats théoriques</button>
+  <button class:active={tab === "intl"} onclick={() => tab = "intl"}>Recherche internationale</button>
   <button class:active={tab === "births"} onclick={() => tab = "births"}>Naissances 2006</button>
 </nav>
 
@@ -76,6 +78,8 @@
   <RaresNatTab />
 {:else if tab === "candidates"}
   <CandidatesTab />
+{:else if tab === "intl"}
+  <IntlTab />
 {:else}
   <BirthsTab />
 {/if}

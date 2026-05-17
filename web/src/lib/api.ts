@@ -177,6 +177,59 @@ export async function fetchRarestNat(p: {
   return r.json();
 }
 
+export type IntlRow = {
+  rank: number;
+  prenom: string;
+  sex: 1 | 2;
+  total_us: number;
+  first_year: number;
+  last_year: number;
+  era_count: number;
+  has_double_variant: boolean;
+  variant_example: string | null;
+};
+
+export type IntlResponse = {
+  letter: string;
+  sex: 0 | 1 | 2;
+  search: string;
+  exclude: string;
+  era_start: number;
+  era_end: number;
+  absent_fr: string;
+  double_variant: boolean;
+  limit: number;
+  has_more: boolean;
+  results: IntlRow[];
+};
+
+export async function fetchIntl(p: {
+  letter: string;
+  sex?: 0 | 1 | 2;
+  search?: string;
+  exclude?: string;
+  era_start?: number;
+  era_end?: number;
+  absent_fr?: string;
+  double_variant?: boolean;
+  limit?: number;
+}): Promise<IntlResponse> {
+  const qs = new URLSearchParams({
+    letter: p.letter,
+    era_start: String(p.era_start ?? 1985),
+    era_end: String(p.era_end ?? 2005),
+    absent_fr: p.absent_fr ?? "any",
+    limit: String(p.limit ?? 30)
+  });
+  if (p.sex && p.sex !== 0) qs.set("sex", String(p.sex));
+  if (p.search && p.search.trim()) qs.set("search", p.search.trim());
+  if (p.exclude && p.exclude.trim()) qs.set("exclude", p.exclude.trim());
+  if (p.double_variant) qs.set("double_variant", "1");
+  const r = await fetch(`${BASE}/intl-search?${qs}`);
+  if (!r.ok) throw new Error(`intl-search: ${r.status}`);
+  return r.json();
+}
+
 export async function fetchBirths(p: {
   month: number;
   dept: string;

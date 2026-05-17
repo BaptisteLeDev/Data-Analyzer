@@ -200,6 +200,10 @@ pub struct BirthsQuery {
     pub age_mere_max: Option<i32>,
     pub age_pere_min: Option<i32>,
     pub age_pere_max: Option<i32>,
+    /// "excl" (default) — both parents not flagged as étranger
+    /// "only" — at least one parent étranger
+    /// "all"  — no nationality filter
+    pub foreign: Option<String>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
@@ -241,17 +245,24 @@ async fn births(
     let age_mere_max = q.age_mere_max.unwrap_or(99);
     let age_pere_min = q.age_pere_min.unwrap_or(0);
     let age_pere_max = q.age_pere_max.unwrap_or(99);
+    let foreign = q.foreign.unwrap_or_else(|| "excl".to_string());
+    let foreign_sql = match foreign.as_str() {
+        "only" => "AND (nat_mere = 2 OR nat_pere = 2)",
+        "all"  => "",
+        _      => "AND (nat_mere IS NULL OR nat_mere = 1) AND (nat_pere IS NULL OR nat_pere = 1)",
+    };
     let limit = q.limit.unwrap_or(50).min(500) as i64;
     let offset = q.offset.unwrap_or(0) as i64;
 
     let conn = s.pool.get()?;
 
-    let where_clause = "
+    let where_clause = format!("
          WHERE (?1 = '' OR dept_nais = ?1)
            AND (?2 = 0 OR mois = ?2)
            AND (?3 = 0 OR sexe = ?3)
            AND (age_mere IS NULL OR age_mere BETWEEN ?4 AND ?5)
-           AND (age_pere IS NULL OR age_pere BETWEEN ?6 AND ?7)";
+           AND (age_pere IS NULL OR age_pere BETWEEN ?6 AND ?7)
+           {}", foreign_sql);
 
     let count_sql = format!("SELECT COUNT(*) FROM naissances {}", where_clause);
     let total: i64 = conn.query_row(

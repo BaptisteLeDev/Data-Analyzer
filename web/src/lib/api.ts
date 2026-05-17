@@ -93,6 +93,8 @@ export type BirthsResponse = {
   results: BirthRow[];
 };
 
+export type ForeignFilter = "excl" | "only" | "all";
+
 export async function fetchBirths(p: {
   month: number;
   dept: string;
@@ -101,6 +103,7 @@ export async function fetchBirths(p: {
   age_mere_max: number;
   age_pere_min: number;
   age_pere_max: number;
+  foreign?: ForeignFilter;
   limit?: number;
   offset?: number;
 }): Promise<BirthsResponse> {
@@ -112,6 +115,7 @@ export async function fetchBirths(p: {
     age_mere_max: String(p.age_mere_max),
     age_pere_min: String(p.age_pere_min),
     age_pere_max: String(p.age_pere_max),
+    foreign: p.foreign ?? "excl",
     limit: String(p.limit ?? 50),
     offset: String(p.offset ?? 0)
   });

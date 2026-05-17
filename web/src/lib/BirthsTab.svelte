@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DEPARTEMENTS } from "./departements";
-  import { fetchBirths, type BirthsResponse, type BirthRow } from "./api";
+  import { fetchBirths, type BirthsResponse, type BirthRow, type ForeignFilter } from "./api";
 
   let month = $state(5);
   let dept = $state("76");
@@ -9,6 +9,7 @@
   let age_mere_max = $state(50);
   let age_pere_min = $state(15);
   let age_pere_max = $state(60);
+  let foreign = $state<ForeignFilter>("excl");
 
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -31,6 +32,7 @@
         month, dept, sex,
         age_mere_min, age_mere_max,
         age_pere_min, age_pere_max,
+        foreign,
         limit: 50, offset
       });
       if (offset === 0) {
@@ -126,6 +128,15 @@
       <span>→</span>
       <input type="number" min="15" max="60" bind:value={age_pere_max} />
     </fieldset>
+
+    <div class="field">
+      <label for="b-foreign">Nationalité parents</label>
+      <select id="b-foreign" bind:value={foreign}>
+        <option value="excl">Exclure étrangers (défaut)</option>
+        <option value="all">Tous</option>
+        <option value="only">Étrangers uniquement</option>
+      </select>
+    </div>
 
     <button onclick={() => load(0)} disabled={loading}>
       {loading ? "Calcul…" : "▶ Lancer"}

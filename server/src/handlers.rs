@@ -14,6 +14,7 @@ pub fn router() -> Router<AppState> {
         .route("/candidates", get(candidates))
         .route("/birth-context", get(birth_context))
         .route("/births", get(births))
+        .route("/intl-search", get(intl_search))
 }
 
 // ---------- /departements ----------
@@ -505,5 +506,242 @@ async fn candidates(
 
     Ok(Json(CandidatesResp {
         year, letter, sex, search, exclude, limit, has_more, results,
+    }))
+}
+
+// ---------- /intl-search ----------
+//
+// Find rare English/international names that are likely "imports" — present in
+// US SSA records but absent from French INSEE. Useful for tracking down a name
+// inspired by 90s English-language pop culture.
+
+#[derive(Deserialize)]
+pub struct IntlQuery {
+    pub letter: Option<String>,
+    pub sex: Option<i32>,
+    pub search: Option<String>,
+    pub exclude: Option<String>,
+    /// If set (e.g. 1990, 2000), restrict to names that had ≥1 US occurrences during that era
+    pub era_start: Option<i32>,
+    pub era_end: Option<i32>,
+    /// "any" (default) — filter only names absent from prenoms_nat for any year
+    /// "year:2006" — absent from prenoms_nat for that specific year only
+    pub absent_fr: Option<String>,
+    /// If "1", only return names whose doubling-letter variant ALSO exists in intl
+    /// (e.g. ELIOT → checks if ELLIOT also exists)
+    pub double_variant: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct IntlRow {
+    rank: usize,
+    prenom: String,
+    sex: i32,
+    total_us: i64,
+    first_year: i32,
+    last_year: i32,
+    era_count: i64,
+    has_double_variant: bool,
+    variant_example: Option<String>,
+}
+
+#[derive(Serialize)]
+struct IntlResp {
+    letter: String,
+    sex: i32,
+    search: String,
+    exclude: String,
+    era_start: i32,
+    era_end: i32,
+    absent_fr: String,
+    double_variant: bool,
+    limit: i64,
+    has_more: bool,
+    results: Vec<IntlRow>,
+}
+
+async fn intl_search(
+    State(s): State<AppState>,
+    Query(q): Query<IntlQuery>,
+) -> Result<Json<IntlResp>, ApiError> {
+    let letter = q.letter.unwrap_or_default().to_uppercase();
+    // prenoms_intl stores names already uppercased — use direct LIKE (no UPPER() wrapper)
+    let letter_pattern = if letter.is_empty() {
+        "%".to_string()
+    } else {
+        format!("%{}%", letter)
+    };
+    let sex = q.sex.filter(|&v| v == 1 || v == 2).unwrap_or(0);
+    let search = q.search.unwrap_or_default().trim().to_uppercase();
+    let exclude = q.exclude.unwrap_or_default().trim().to_uppercase();
+    let era_start = q.era_start.unwrap_or(1985);
+    let era_end = q.era_end.unwrap_or(2005);
+    let absent_fr = q.absent_fr.unwrap_or_else(|| "any".to_string());
+    let double_variant = q.double_variant.as_deref() == Some("1");
+    let limit = q.limit.unwrap_or(30).min(500) as i64;
+
+    let conn = s.pool.get()?;
+
+    // Step 1: build distinct set of uppercased French names to use for anti-join.
+    // prenoms_nat prenom values come from INSEE (already uppercase in the DBF).
+    // We materialise into a HashSet to avoid N correlated subqueries.
+    let french_names: std::collections::HashSet<String> = {
+        if absent_fr.starts_with("year:") {
+            if let Some(y) = absent_fr
+                .strip_prefix("year:")
+                .and_then(|s| s.parse::<i32>().ok())
+            {
+                let mut s2 = conn.prepare(
+                    "SELECT DISTINCT UPPER(prenom) FROM prenoms_nat WHERE annee = ?1",
+                )?;
+                let x: std::collections::HashSet<String> = s2
+                    .query_map(params![y], |row| row.get::<_, String>(0))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                x
+            } else {
+                std::collections::HashSet::new()
+            }
+        } else {
+            // All years
+            let mut s2 = conn.prepare(
+                "SELECT DISTINCT UPPER(prenom) FROM prenoms_nat",
+            )?;
+            let x: std::collections::HashSet<String> = s2
+                .query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            x
+        }
+    };
+
+    // Step 2: build distinct set of known intl names for fast double-variant lookup
+    // Only needed when double_variant is requested.
+    let intl_name_set: std::collections::HashSet<String> = if double_variant {
+        let mut s2 = conn.prepare("SELECT DISTINCT prenom FROM prenoms_intl")?;
+        let x: std::collections::HashSet<String> = s2
+            .query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        x
+    } else {
+        std::collections::HashSet::new()
+    };
+
+    // Step 3: aggregate prenoms_intl — no anti-join in SQL, we do it in Rust
+    // This avoids the correlated subquery scanning 648k rows per intl row.
+    let sql =
+        "SELECT prenom, sex,
+                SUM(nombre) AS total,
+                MIN(annee) AS first_y,
+                MAX(annee) AS last_y,
+                SUM(CASE WHEN annee BETWEEN ?3 AND ?4 THEN nombre ELSE 0 END) AS era_cnt
+         FROM prenoms_intl
+         WHERE prenom LIKE ?1
+           AND (?2 = 0 OR sex = ?2)
+           AND length(prenom) > 1
+         GROUP BY prenom, sex
+         HAVING era_cnt > 0
+         ORDER BY total ASC, prenom ASC";
+
+    let mut stmt = conn.prepare(sql)?;
+    let raw_rows = stmt
+        .query_map(
+            params![letter_pattern, sex, era_start, era_end],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i32>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, i32>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            },
+        )?
+        .filter_map(|r| r.ok())
+        .collect::<Vec<_>>();
+
+    // Step 4: apply Rust-side filters (search, exclude, anti-FR, double-variant)
+    // and paginate.
+    let mut results: Vec<IntlRow> = Vec::new();
+    let mut total_after_filter: usize = 0;
+
+    for (prenom, sex_v, total, first_y, last_y, era_cnt) in raw_rows {
+        // search filter
+        if !search.is_empty() && !prenom.contains(&search) {
+            continue;
+        }
+        // exclude filter
+        if !exclude.is_empty() && prenom.contains(&exclude) {
+            continue;
+        }
+        // anti-join: skip if name appears in French INSEE records
+        if !french_names.is_empty() && french_names.contains(&prenom) {
+            continue;
+        }
+
+        // double-variant detection (in-memory, O(len) per name)
+        let mut has_variant = false;
+        let mut variant_example: Option<String> = None;
+        if double_variant {
+            let chars: Vec<char> = prenom.chars().collect();
+            'outer: for k in 0..chars.len() {
+                let next_same = k + 1 < chars.len() && chars[k] == chars[k + 1];
+                if next_same {
+                    continue;
+                }
+                let mut v = String::with_capacity(prenom.len() + 1);
+                v.extend(chars[..=k].iter());
+                v.push(chars[k]);
+                v.extend(chars[k + 1..].iter());
+                if intl_name_set.contains(&v) {
+                    has_variant = true;
+                    variant_example = Some(v);
+                    break 'outer;
+                }
+            }
+            if !has_variant {
+                continue;
+            }
+        }
+
+        total_after_filter += 1;
+
+        if results.len() < (limit + 1) as usize {
+            results.push(IntlRow {
+                rank: 0, // set below
+                prenom,
+                sex: sex_v,
+                total_us: total,
+                first_year: first_y,
+                last_year: last_y,
+                era_count: era_cnt,
+                has_double_variant: has_variant,
+                variant_example,
+            });
+        }
+    }
+
+    let has_more = total_after_filter > limit as usize;
+    let truncated_len = results.len().min(limit as usize);
+    results.truncate(truncated_len);
+    for (i, r) in results.iter_mut().enumerate() {
+        r.rank = i + 1;
+    }
+
+    Ok(Json(IntlResp {
+        letter,
+        sex,
+        search,
+        exclude,
+        era_start,
+        era_end,
+        absent_fr,
+        double_variant,
+        limit,
+        has_more,
+        results,
     }))
 }

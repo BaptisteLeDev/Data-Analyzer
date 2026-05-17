@@ -9,8 +9,8 @@ Design inspired by the official French Republic visual identity (palette `#00009
 
 ## Stack
 - **`prep/`** — Rust ETL: reads `nais2006.dbf` + `dpt2006.csv` + Etalab JSON → SQLite (`data/analyzer.sqlite`)
-- **`server/`** — Rust axum API on `:8787` (3 endpoints, r2d2-pooled SQLite)
-- **`web/`** — Svelte 5 + Vite + Bun front on `:5173`, proxied to the API
+- **`server/`** — Rust axum on `:8787`. Serves both the 3 JSON endpoints AND the compiled `web/dist` static files. Single binary, single port.
+- **`web/`** — Svelte 5 + Vite + Bun front. `bun run build` → `web/dist`. (Dev mode `bun run dev` on `:5173` still available with HMR, proxies `/api` to `:8787`.)
 
 ## Prerequisites
 - Rust 1.75+ (`rustup`)
@@ -19,24 +19,26 @@ Design inspired by the official French Republic visual identity (palette `#00009
   - `nais2006.dbf` — extracted from `etatcivil2006_nais2006_dbase.zip` (INSEE fichier détail naissances 2006)
   - `dpt2006.csv` — extracted from `dpt_2000_2021_csv.zip`; the ETL ingests every year present, the API only queries the year you request
 
-## Run
+## Run (one process)
 
 ```powershell
-# 1. Build database (one-shot)
+# 1. Build database (one-shot, ~30 s)
 cd prep
 cargo run --release
 
-# 2. Launch API (keep running)
-cd ../server
-cargo run --release
-
-# 3. In another terminal: launch web
+# 2. Build web (one-shot, ~500 ms)
 cd ../web
 bun install
-bun run dev
+bun run build
+
+# 3. Launch unified server (API + static front on :8787)
+cd ../server
+cargo run --release
 ```
 
-Open http://localhost:5173. Defaults: 2006 · Seine-Maritime (76) · Mai · Lettre "L".
+Open http://localhost:8787. Defaults: 2006 · Seine-Maritime (76) · Mai · Lettre "L".
+
+> The Rust server now serves both `/api/...` and the compiled front (`web/dist`). **One port, one process.** The Vite dev mode (`bun run dev`, port 5173, HMR) is still available for active frontend development — it proxies `/api` to `:8787`.
 
 ## API
 

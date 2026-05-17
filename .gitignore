@@ -21,3 +21,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Local run logs
+**/server_log.txt

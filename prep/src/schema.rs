@@ -5,6 +5,7 @@ pub fn create(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
         DROP TABLE IF EXISTS prenoms;
+        DROP TABLE IF EXISTS prenoms_nat;
         DROP TABLE IF EXISTS naissances;
         DROP TABLE IF EXISTS departements;
 
@@ -18,6 +19,13 @@ pub fn create(conn: &Connection) -> Result<()> {
             prenom TEXT NOT NULL,
             annee  INTEGER NOT NULL,
             dept   TEXT NOT NULL,
+            nombre INTEGER NOT NULL
+        );
+
+        CREATE TABLE prenoms_nat (
+            sexe   INTEGER NOT NULL,
+            prenom TEXT NOT NULL,
+            annee  INTEGER NOT NULL,
             nombre INTEGER NOT NULL
         );
 
@@ -48,11 +56,13 @@ pub fn create(conn: &Connection) -> Result<()> {
 pub fn index(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
-        CREATE INDEX idx_prenoms_year_dept ON prenoms(annee, dept);
-        CREATE INDEX idx_prenoms_prenom    ON prenoms(prenom);
-        CREATE INDEX idx_nais_dept_mois    ON naissances(dept_nais, mois);
-        CREATE INDEX idx_nais_age_mere     ON naissances(age_mere);
-        CREATE INDEX idx_nais_age_pere     ON naissances(age_pere);
+        CREATE INDEX idx_prenoms_year_dept    ON prenoms(annee, dept);
+        CREATE INDEX idx_prenoms_prenom       ON prenoms(prenom);
+        CREATE INDEX idx_prenoms_nat_year     ON prenoms_nat(annee);
+        CREATE INDEX idx_prenoms_nat_prenom   ON prenoms_nat(prenom);
+        CREATE INDEX idx_nais_dept_mois       ON naissances(dept_nais, mois);
+        CREATE INDEX idx_nais_age_mere        ON naissances(age_mere);
+        CREATE INDEX idx_nais_age_pere        ON naissances(age_pere);
         ",
     )?;
     Ok(())

@@ -3,10 +3,12 @@ use anyhow::Result;
 mod schema;
 mod departements;
 mod prenoms;
+mod prenoms_nat;
 mod naissances;
 
 const DB_PATH: &str = "../data/analyzer.sqlite";
 const DBF_PATH: &str = "../data/NAIS2006.dbf";
+const NAT_DBF_PATH: &str = "../data/nat2021.dbf";
 const DATA_DIR: &str = "../data";
 const DEPTS_JSON: &str = "../web/src/data/departements.json";
 
@@ -17,6 +19,7 @@ fn main() -> Result<()> {
     schema::create(&conn)?;
     departements::load(&mut conn, DEPTS_JSON)?;
     prenoms::load(&mut conn, DATA_DIR)?;
+    prenoms_nat::load(&mut conn, NAT_DBF_PATH)?;
     naissances::load(&mut conn, DBF_PATH)?;
     schema::index(&conn)?;
     println!("Done. Database written to {DB_PATH}");

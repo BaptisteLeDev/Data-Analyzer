@@ -66,6 +66,7 @@ struct RarestResp {
     exclude: String,
     limit: i64,
     has_more: bool,
+    censored_count: i64,
     results: Vec<RarestRow>,
 }
 
@@ -108,14 +109,27 @@ async fn rarest(
         .collect::<Result<Vec<_>, _>>()?;
 
     let has_more = rows.len() as i64 > limit;
-    let results = rows
+    let results: Vec<RarestRow> = rows
         .into_iter()
         .take(limit as usize)
         .enumerate()
         .map(|(i, (prenom, sexe, n))| RarestRow { rank: i + 1, prenom, sexe, n })
         .collect();
 
-    Ok(Json(RarestResp { year, dept, letter, sex, search, exclude, limit, has_more, results }))
+    let censored_count: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(nombre), 0)
+         FROM prenoms
+         WHERE annee = ?1
+           AND (?2 = '' OR dept = ?2)
+           AND (?3 = 0 OR sexe = ?3)
+           AND prenom = '_PRENOMS_RARES'",
+        params![year, dept, sex],
+        |row| row.get(0),
+    )?;
+
+    Ok(Json(RarestResp {
+        year, dept, letter, sex, search, exclude, limit, has_more, censored_count, results,
+    }))
 }
 
 // ---------- /birth-context ----------

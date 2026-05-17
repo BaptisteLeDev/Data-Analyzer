@@ -69,6 +69,15 @@
     {:else if data.results.length >= 20}
       <p class="meta done">— Fin de la liste —</p>
     {/if}
+
+    {#if data.censored_count > 0}
+      <aside class="censored">
+        <span class="badge">_PRENOMS_RARES</span>
+        <strong>{data.censored_count.toLocaleString("fr-FR")}</strong> naissance{data.censored_count > 1 ? "s" : ""}
+        dont le prénom apparaît 1 ou 2 fois — censurées par l'INSEE (secret statistique).
+        Comptées ici mais non identifiables nominativement.
+      </aside>
+    {/if}
   {/if}
 </section>
 
@@ -121,4 +130,23 @@
     cursor: pointer;
   }
   .more:hover:not(:disabled) { background: var(--bleu-rep); color: white; }
+  .censored {
+    margin-top: calc(var(--space) * 3);
+    padding: calc(var(--space) * 1.5) calc(var(--space) * 2);
+    background: #FFF6F6;
+    border-left: 3px solid var(--rouge-rep);
+    font-size: 0.85rem;
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .badge {
+    display: inline-block;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    background: var(--rouge-rep);
+    color: white;
+    padding: 2px 6px;
+    margin-right: 6px;
+    letter-spacing: 0.04em;
+  }
 </style>

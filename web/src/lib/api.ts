@@ -13,6 +13,7 @@ export type RarestResponse = {
   exclude: string;
   limit: number;
   has_more: boolean;
+  censored_count: number;
   results: RarestRow[];
 };
 

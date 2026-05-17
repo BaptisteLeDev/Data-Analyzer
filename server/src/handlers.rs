@@ -44,6 +44,7 @@ pub struct RarestQuery {
     pub letter: Option<String>,
     pub sex: Option<i32>,
     pub search: Option<String>,
+    pub exclude: Option<String>,
     pub limit: Option<u32>,
 }
 
@@ -62,6 +63,9 @@ struct RarestResp {
     letter: String,
     sex: i32,
     search: String,
+    exclude: String,
+    limit: i64,
+    has_more: bool,
     results: Vec<RarestRow>,
 }
 
@@ -76,7 +80,9 @@ async fn rarest(
     let sex = q.sex.filter(|&v| v == 1 || v == 2).unwrap_or(0);
     let search = q.search.unwrap_or_default().trim().to_uppercase();
     let search_pattern = format!("%{}%", search);
-    let limit = q.limit.unwrap_or(20).min(200) as i64;
+    let exclude = q.exclude.unwrap_or_default().trim().to_uppercase();
+    let exclude_pattern = format!("%{}%", exclude);
+    let limit = q.limit.unwrap_or(20).min(500) as i64;
 
     let conn = s.pool.get()?;
     let mut stmt = conn.prepare(
@@ -87,26 +93,29 @@ async fn rarest(
            AND UPPER(prenom) LIKE ?3
            AND (?4 = 0 OR sexe = ?4)
            AND (?5 = '' OR UPPER(prenom) LIKE ?6)
+           AND (?7 = '' OR UPPER(prenom) NOT LIKE ?8)
            AND prenom NOT IN ('_PRENOMS_RARES', 'XXXX')
            AND length(prenom) > 1
          GROUP BY prenom, sexe
          ORDER BY n ASC, prenom ASC
-         LIMIT ?7",
+         LIMIT ?9",
     )?;
     let rows = stmt
         .query_map(
-            params![year, dept, letter_pattern, sex, search, search_pattern, limit],
+            params![year, dept, letter_pattern, sex, search, search_pattern, exclude, exclude_pattern, limit + 1],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?, row.get::<_, i64>(2)?)),
         )?
         .collect::<Result<Vec<_>, _>>()?;
 
+    let has_more = rows.len() as i64 > limit;
     let results = rows
         .into_iter()
+        .take(limit as usize)
         .enumerate()
         .map(|(i, (prenom, sexe, n))| RarestRow { rank: i + 1, prenom, sexe, n })
         .collect();
 
-    Ok(Json(RarestResp { year, dept, letter, sex, search, results }))
+    Ok(Json(RarestResp { year, dept, letter, sex, search, exclude, limit, has_more, results }))
 }
 
 // ---------- /birth-context ----------

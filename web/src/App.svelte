@@ -11,18 +11,20 @@
   let letter = $state("L");
   let sex = $state<0 | 1 | 2>(0);
   let search = $state("");
+  let exclude = $state("");
+  let limit = $state(20);
 
   let loading = $state(false);
   let error = $state<string | null>(null);
   let rarest = $state<RarestResponse | null>(null);
   let ctx = $state<BirthContext | null>(null);
 
-  async function run() {
+  async function fetchNames(useLimit: number) {
     loading = true;
     error = null;
     try {
       const [r, c] = await Promise.all([
-        fetchRarest({ year, dept, letter, sex, search, limit: 20 }),
+        fetchRarest({ year, dept, letter, sex, search, exclude, limit: useLimit }),
         fetchBirthContext({ year, dept, month })
       ]);
       rarest = r;
@@ -34,6 +36,16 @@
     } finally {
       loading = false;
     }
+  }
+
+  function run() {
+    limit = 20;
+    fetchNames(limit);
+  }
+
+  function loadMore() {
+    limit += 20;
+    fetchNames(limit);
   }
 </script>
 
@@ -47,11 +59,12 @@
     bind:letter
     bind:sex
     bind:search
+    bind:exclude
     {loading}
     onsubmit={run}
   />
   <div class="main">
-    <Results data={rarest} {loading} {error} />
+    <Results data={rarest} {loading} {error} onLoadMore={loadMore} />
     <Context data={ctx} />
   </div>
 </div>

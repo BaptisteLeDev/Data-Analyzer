@@ -1,31 +1,43 @@
 <script lang="ts">
   import type { RarestResponse } from "./api";
 
-  type Props = { data: RarestResponse | null; loading: boolean; error: string | null };
-  const { data, loading, error }: Props = $props();
+  type Props = {
+    data: RarestResponse | null;
+    loading: boolean;
+    error: string | null;
+    onLoadMore: () => void;
+  };
+  const { data, loading, error, onLoadMore }: Props = $props();
 
   function sexLabel(s: 1 | 2): string {
     return s === 1 ? "M" : "F";
   }
+
+  function describeFilters(d: RarestResponse): string {
+    const parts: string[] = [`Année ${d.year}`];
+    parts.push(d.dept ? `Département ${d.dept}` : "France entière");
+    if (d.sex === 1) parts.push("hommes");
+    else if (d.sex === 2) parts.push("femmes");
+    if (d.letter) parts.push(`contient « ${d.letter} »`);
+    if (d.search) parts.push(`avec « ${d.search} »`);
+    if (d.exclude) parts.push(`sans « ${d.exclude} »`);
+    return parts.join(" · ");
+  }
 </script>
 
 <section class="results">
-  <h2>Top 20 — Prénoms rares</h2>
+  <h2>Prénoms rares {data ? `(${data.results.length})` : ""}</h2>
 
-  {#if loading}
+  {#if loading && !data}
     <p class="meta">Calcul en cours…</p>
   {:else if error}
     <p class="error">Erreur : {error}</p>
   {:else if !data}
     <p class="meta">Sélectionnez vos filtres puis lancez le calcul.</p>
   {:else if data.results.length === 0}
-    <p class="meta">
-      Aucun prénom contenant « {data.letter} » trouvé pour {data.dept} en {data.year}.
-    </p>
+    <p class="meta">Aucun prénom ne correspond à ces filtres.</p>
   {:else}
-    <p class="meta">
-      Année {data.year} · Département {data.dept} · Lettre obligatoire « {data.letter} »
-    </p>
+    <p class="meta">{describeFilters(data)}</p>
     <table>
       <thead>
         <tr>
@@ -46,6 +58,17 @@
         {/each}
       </tbody>
     </table>
+
+    {#if data.has_more}
+      <div class="actions">
+        <button class="more" onclick={onLoadMore} disabled={loading}>
+          {loading ? "Chargement…" : "Charger 20 de plus"}
+        </button>
+        <span class="meta inline">Affichés : {data.results.length}</span>
+      </div>
+    {:else if data.results.length >= 20}
+      <p class="meta done">— Fin de la liste —</p>
+    {/if}
   {/if}
 </section>
 
@@ -63,6 +86,8 @@
     color: var(--text-mute);
     margin: 0 0 calc(var(--space) * 2);
   }
+  .meta.inline { margin: 0; }
+  .meta.done { text-align: center; margin-top: calc(var(--space) * 2); }
   .error { color: var(--rouge-rep); }
   table { width: 100%; border-collapse: collapse; }
   th, td {
@@ -81,4 +106,19 @@
   .num, .rank { text-align: right; font-variant-numeric: tabular-nums; }
   .name { font-weight: 600; color: var(--bleu-rep); }
   tbody tr:hover { background: var(--bg-panel); }
+  .actions {
+    margin-top: calc(var(--space) * 2);
+    display: flex;
+    align-items: center;
+    gap: calc(var(--space) * 2);
+  }
+  .more {
+    background: white;
+    color: var(--bleu-rep);
+    border: 1px solid var(--bleu-rep);
+    padding: var(--space) calc(var(--space) * 2);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .more:hover:not(:disabled) { background: var(--bleu-rep); color: white; }
 </style>

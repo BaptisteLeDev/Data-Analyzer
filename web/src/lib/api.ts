@@ -10,6 +10,9 @@ export type RarestResponse = {
   letter: string;
   sex: 0 | 1 | 2;
   search: string;
+  exclude: string;
+  limit: number;
+  has_more: boolean;
   results: RarestRow[];
 };
 
@@ -33,6 +36,7 @@ export async function fetchRarest(p: {
   letter: string;
   sex?: 0 | 1 | 2;
   search?: string;
+  exclude?: string;
   limit?: number;
 }): Promise<RarestResponse> {
   const qs = new URLSearchParams({
@@ -43,6 +47,7 @@ export async function fetchRarest(p: {
   });
   if (p.sex && p.sex !== 0) qs.set("sex", String(p.sex));
   if (p.search && p.search.trim()) qs.set("search", p.search.trim());
+  if (p.exclude && p.exclude.trim()) qs.set("exclude", p.exclude.trim());
   const r = await fetch(`${BASE}/rarest?${qs}`);
   if (!r.ok) throw new Error(`rarest: ${r.status}`);
   return r.json();

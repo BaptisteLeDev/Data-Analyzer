@@ -8,6 +8,7 @@
     letter: string;
     sex: 0 | 1 | 2;
     search: string;
+    exclude: string;
     loading: boolean;
     onsubmit: () => void;
   };
@@ -19,6 +20,7 @@
     letter = $bindable(),
     sex = $bindable(),
     search = $bindable(),
+    exclude = $bindable(),
     loading,
     onsubmit
   }: Props = $props();
@@ -83,13 +85,24 @@
   </div>
 
   <div class="field">
-    <label for="f-search">Recherche <span class="hint">(sous-chaîne)</span></label>
+    <label for="f-search">Recherche <span class="hint">(doit contenir)</span></label>
     <input
       id="f-search"
       type="text"
       placeholder="ex : LOU"
       bind:value={search}
       oninput={(e) => search = (e.currentTarget as HTMLInputElement).value.toUpperCase()}
+    />
+  </div>
+
+  <div class="field">
+    <label for="f-exclude">Exclusion <span class="hint">(ne doit pas contenir)</span></label>
+    <input
+      id="f-exclude"
+      type="text"
+      placeholder="ex : LL → exclut Elliot"
+      bind:value={exclude}
+      oninput={(e) => exclude = (e.currentTarget as HTMLInputElement).value.toUpperCase()}
     />
   </div>
 

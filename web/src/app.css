@@ -1,0 +1,60 @@
+:root {
+  --bleu-rep: #000091;
+  --rouge-rep: #E1000F;
+  --bg: #FFFFFF;
+  --bg-panel: #F6F6F6;
+  --border: #DDDDDD;
+  --text: #161616;
+  --text-mute: #6A6A6A;
+  --space: 8px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: "Marianne", Inter, system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: var(--bleu-rep);
+  color: white;
+  padding: calc(var(--space) * 1.5) calc(var(--space) * 2);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+button:hover { background: #1212a3; }
+button:disabled { background: #999; cursor: not-allowed; }
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-mute);
+  margin-bottom: calc(var(--space) / 2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+select, input[type="text"] {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: var(--space);
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--text);
+}
+
+select:focus, input[type="text"]:focus {
+  outline: 2px solid var(--bleu-rep);
+  outline-offset: -1px;
+}

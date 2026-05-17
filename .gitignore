@@ -1,0 +1,23 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Node / Bun
+node_modules/
+dist/
+.vite/
+bun.lockb
+
+# Data (large INSEE files, generated DB)
+data/*
+!data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp

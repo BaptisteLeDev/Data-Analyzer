@@ -11,6 +11,7 @@ pub fn router() -> Router<AppState> {
         .route("/departements", get(departements))
         .route("/rarest", get(rarest))
         .route("/rarest-nat", get(rarest_nat))
+        .route("/candidates", get(candidates))
         .route("/birth-context", get(birth_context))
         .route("/births", get(births))
 }
@@ -402,5 +403,107 @@ async fn rarest_nat(
 
     Ok(Json(RarestNatResp {
         year, letter, sex, search, exclude, limit, has_more, censored_count, results,
+    }))
+}
+
+// ---------- /candidates ----------
+//
+// "Theoretical" candidate names that might be in the censored bucket for a given year.
+// Strategy: take every distinct (prenom, sexe) known to INSEE across 1900-2021
+// (universe set), then exclude those present in the target year's national file.
+// What remains are names INSEE saw historically but NOT in `year` — plausible
+// candidates for the _PRENOMS_RARES bucket of that year.
+
+#[derive(Deserialize)]
+pub struct CandidatesQuery {
+    pub year: Option<i32>,
+    pub letter: Option<String>,
+    pub sex: Option<i32>,
+    pub search: Option<String>,
+    pub exclude: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct CandidateRow {
+    rank: usize,
+    prenom: String,
+    sexe: i32,
+    first_year: i32,
+    last_year: i32,
+    total_hist: i64,
+}
+
+#[derive(Serialize)]
+struct CandidatesResp {
+    year: i32,
+    letter: String,
+    sex: i32,
+    search: String,
+    exclude: String,
+    limit: i64,
+    has_more: bool,
+    results: Vec<CandidateRow>,
+}
+
+async fn candidates(
+    State(s): State<AppState>,
+    Query(q): Query<CandidatesQuery>,
+) -> Result<Json<CandidatesResp>, ApiError> {
+    let year = q.year.unwrap_or(2006);
+    let letter = q.letter.unwrap_or_default().to_uppercase();
+    let letter_pattern = if letter.is_empty() { "%".to_string() } else { format!("%{}%", letter) };
+    let sex = q.sex.filter(|&v| v == 1 || v == 2).unwrap_or(0);
+    let search = q.search.unwrap_or_default().trim().to_uppercase();
+    let search_pattern = format!("%{}%", search);
+    let exclude = q.exclude.unwrap_or_default().trim().to_uppercase();
+    let exclude_pattern = format!("%{}%", exclude);
+    let limit = q.limit.unwrap_or(20).min(500) as i64;
+
+    let conn = s.pool.get()?;
+    let mut stmt = conn.prepare(
+        "SELECT prenom, sexe, MIN(annee) AS first_year, MAX(annee) AS last_year, SUM(nombre) AS total_hist
+         FROM prenoms_nat
+         WHERE prenom NOT IN ('_PRENOMS_RARES', 'XXXX')
+           AND length(prenom) > 1
+           AND UPPER(prenom) LIKE ?1
+           AND (?2 = 0 OR sexe = ?2)
+           AND (?3 = '' OR UPPER(prenom) LIKE ?4)
+           AND (?5 = '' OR UPPER(prenom) NOT LIKE ?6)
+           AND NOT EXISTS (
+             SELECT 1 FROM prenoms_nat p2
+             WHERE p2.annee = ?7
+               AND p2.prenom = prenoms_nat.prenom
+               AND p2.sexe = prenoms_nat.sexe
+           )
+         GROUP BY prenom, sexe
+         ORDER BY total_hist ASC, prenom ASC
+         LIMIT ?8",
+    )?;
+    let rows = stmt
+        .query_map(
+            params![letter_pattern, sex, search, search_pattern, exclude, exclude_pattern, year, limit + 1],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i32>(1)?,
+                row.get::<_, i32>(2)?,
+                row.get::<_, i32>(3)?,
+                row.get::<_, i64>(4)?,
+            )),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let has_more = rows.len() as i64 > limit;
+    let results: Vec<CandidateRow> = rows
+        .into_iter()
+        .take(limit as usize)
+        .enumerate()
+        .map(|(i, (prenom, sexe, first_year, last_year, total_hist))| CandidateRow {
+            rank: i + 1, prenom, sexe, first_year, last_year, total_hist,
+        })
+        .collect();
+
+    Ok(Json(CandidatesResp {
+        year, letter, sex, search, exclude, limit, has_more, results,
     }))
 }

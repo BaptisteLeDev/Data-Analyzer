@@ -115,6 +115,47 @@ export type RarestNatResponse = {
   results: RarestNatRow[];
 };
 
+export type CandidateRow = {
+  rank: number;
+  prenom: string;
+  sexe: 1 | 2;
+  first_year: number;
+  last_year: number;
+  total_hist: number;
+};
+
+export type CandidatesResponse = {
+  year: number;
+  letter: string;
+  sex: 0 | 1 | 2;
+  search: string;
+  exclude: string;
+  limit: number;
+  has_more: boolean;
+  results: CandidateRow[];
+};
+
+export async function fetchCandidates(p: {
+  year: number;
+  letter: string;
+  sex?: 0 | 1 | 2;
+  search?: string;
+  exclude?: string;
+  limit?: number;
+}): Promise<CandidatesResponse> {
+  const qs = new URLSearchParams({
+    year: String(p.year),
+    letter: p.letter,
+    limit: String(p.limit ?? 20)
+  });
+  if (p.sex && p.sex !== 0) qs.set("sex", String(p.sex));
+  if (p.search && p.search.trim()) qs.set("search", p.search.trim());
+  if (p.exclude && p.exclude.trim()) qs.set("exclude", p.exclude.trim());
+  const r = await fetch(`${BASE}/candidates?${qs}`);
+  if (!r.ok) throw new Error(`candidates: ${r.status}`);
+  return r.json();
+}
+
 export async function fetchRarestNat(p: {
   year: number;
   letter: string;

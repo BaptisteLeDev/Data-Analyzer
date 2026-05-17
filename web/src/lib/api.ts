@@ -182,6 +182,8 @@ export type IntlRow = {
   prenom: string;
   sex: 1 | 2;
   total_us: number;
+  total_uk: number;
+  sources: ("US" | "UK")[];
   first_year: number;
   last_year: number;
   era_count: number;
@@ -256,5 +258,117 @@ export async function fetchBirths(p: {
   });
   const r = await fetch(`${BASE}/births?${qs}`);
   if (!r.ok) throw new Error(`births: ${r.status}`);
+  return r.json();
+}
+
+export type TableCount = {
+  name: string;
+  rows: number;
+  description: string;
+};
+
+export type DataSource = {
+  table: string;
+  origin: string;
+  grain: string;
+};
+
+export type YearRange = {
+  table: string;
+  min_year: number | null;
+  max_year: number | null;
+};
+
+export type RequestLog = {
+  method: string;
+  path: string;
+  status: number;
+  duration_ms: number;
+  timestamp: number;
+};
+
+export type DashboardResponse = {
+  db_path: string;
+  db_size_bytes: number;
+  db_size_human: string;
+  sqlite_version: string;
+  total_rows: number;
+  tables: TableCount[];
+  sources: DataSource[];
+  year_ranges: YearRange[];
+  distinct_prenoms_nat: number;
+  distinct_prenoms_intl: number;
+  distinct_depts: number;
+  recent_requests: RequestLog[];
+};
+
+export async function fetchDashboard(): Promise<DashboardResponse> {
+  const r = await fetch(`${BASE}/dashboard`);
+  if (!r.ok) throw new Error(`dashboard: ${r.status}`);
+  return r.json();
+}
+
+// ---- /intl-match (multi-algo cross-language matching) ----
+
+export type IntlMatchAlgo = "phonetic" | "lev2" | "anglicisation";
+
+export type IntlMatchRow = {
+  rank: number;
+  prenom: string;
+  matched_by: IntlMatchAlgo[];
+  score: number;
+  lev_distance: number | null;
+  from_intl: string[];
+  anglo_rules: string[];
+  insee_total: number;
+  insee_years: number;
+};
+
+export type IntlMatchResponse = {
+  letter: string;
+  sex: 0 | 1 | 2;
+  n_min: number;
+  n_max: number;
+  one_l: boolean;
+  lev_max: number;
+  algos: IntlMatchAlgo[];
+  intl_seed_limit: number;
+  limit: number;
+  has_more: boolean;
+  results: IntlMatchRow[];
+};
+
+export async function fetchIntlMatch(p: {
+  letter?: string;
+  sex?: 0 | 1 | 2;
+  search?: string;
+  exclude?: string;
+  era_start?: number;
+  era_end?: number;
+  n_min?: number;
+  n_max?: number;
+  one_l?: boolean;
+  lev_max?: number;
+  intl_seed_limit?: number;
+  algos?: IntlMatchAlgo[];
+  limit?: number;
+}): Promise<IntlMatchResponse> {
+  const qs = new URLSearchParams({
+    letter: p.letter ?? "",
+    era_start: String(p.era_start ?? 1985),
+    era_end: String(p.era_end ?? 2005),
+    n_min: String(p.n_min ?? 5),
+    n_max: String(p.n_max ?? 100),
+    lev_max: String(p.lev_max ?? 2),
+    intl_seed_limit: String(p.intl_seed_limit ?? 800),
+    limit: String(p.limit ?? 50)
+  });
+  if (p.sex && p.sex !== 0) qs.set("sex", String(p.sex));
+  if (p.search && p.search.trim()) qs.set("search", p.search.trim());
+  if (p.exclude && p.exclude.trim()) qs.set("exclude", p.exclude.trim());
+  if (p.one_l) qs.set("one_l", "1");
+  if (p.algos && p.algos.length) qs.set("algos", p.algos.join(","));
+  const r = await fetch(`${BASE}/intl-match?${qs}`);
+  if (!r.ok) throw new Error(`intl-match: ${r.status}`);
   return r.json();
 }

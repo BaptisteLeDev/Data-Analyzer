@@ -52,7 +52,7 @@ pub fn load(conn: &mut Connection, ssa_dir: &str) -> Result<()> {
 
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO prenoms_intl (prenom, sex, annee, nombre) VALUES (?, ?, ?, ?)",
+            "INSERT INTO prenoms_intl (prenom, sex, annee, nombre, source) VALUES (?, ?, ?, ?, 'US')",
         )?;
 
         // --- Format 1: yob{YEAR}.txt ---

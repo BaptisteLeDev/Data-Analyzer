@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="0"  y="0" width="22" height="64" fill="#000091"/>
+  <rect x="22" y="0" width="20" height="64" fill="#FFFFFF"/>
+  <rect x="42" y="0" width="22" height="64" fill="#E1000F"/>
+  <text x="32" y="44" text-anchor="middle"
+        font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800"
+        fill="#161616">DA</text>
+</svg>

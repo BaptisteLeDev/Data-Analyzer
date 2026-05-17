@@ -40,8 +40,10 @@ async fn departements(State(s): State<AppState>) -> Result<Json<Vec<Dept>>, ApiE
 #[derive(Deserialize)]
 pub struct RarestQuery {
     pub year: Option<i32>,
-    pub dept: String,
+    pub dept: Option<String>,
     pub letter: Option<String>,
+    pub sex: Option<i32>,
+    pub search: Option<String>,
     pub limit: Option<u32>,
 }
 
@@ -58,6 +60,8 @@ struct RarestResp {
     year: i32,
     dept: String,
     letter: String,
+    sex: i32,
+    search: String,
     results: Vec<RarestRow>,
 }
 
@@ -66,27 +70,34 @@ async fn rarest(
     Query(q): Query<RarestQuery>,
 ) -> Result<Json<RarestResp>, ApiError> {
     let year = q.year.unwrap_or(2006);
-    let letter = q.letter.unwrap_or_else(|| "L".into()).to_uppercase();
+    let dept = q.dept.unwrap_or_default().trim().to_string();
+    let letter = q.letter.unwrap_or_default().to_uppercase();
+    let letter_pattern = if letter.is_empty() { "%".to_string() } else { format!("%{}%", letter) };
+    let sex = q.sex.filter(|&v| v == 1 || v == 2).unwrap_or(0);
+    let search = q.search.unwrap_or_default().trim().to_uppercase();
+    let search_pattern = format!("%{}%", search);
     let limit = q.limit.unwrap_or(20).min(200) as i64;
-    let pattern = format!("%{}%", letter);
 
     let conn = s.pool.get()?;
     let mut stmt = conn.prepare(
         "SELECT prenom, sexe, SUM(nombre) AS n
          FROM prenoms
          WHERE annee = ?1
-           AND dept = ?2
+           AND (?2 = '' OR dept = ?2)
            AND UPPER(prenom) LIKE ?3
+           AND (?4 = 0 OR sexe = ?4)
+           AND (?5 = '' OR UPPER(prenom) LIKE ?6)
            AND prenom NOT IN ('_PRENOMS_RARES', 'XXXX')
            AND length(prenom) > 1
          GROUP BY prenom, sexe
          ORDER BY n ASC, prenom ASC
-         LIMIT ?4",
+         LIMIT ?7",
     )?;
     let rows = stmt
-        .query_map(params![year, q.dept, pattern, limit], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?, row.get::<_, i64>(2)?))
-        })?
+        .query_map(
+            params![year, dept, letter_pattern, sex, search, search_pattern, limit],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?, row.get::<_, i64>(2)?)),
+        )?
         .collect::<Result<Vec<_>, _>>()?;
 
     let results = rows
@@ -95,7 +106,7 @@ async fn rarest(
         .map(|(i, (prenom, sexe, n))| RarestRow { rank: i + 1, prenom, sexe, n })
         .collect();
 
-    Ok(Json(RarestResp { year, dept: q.dept, letter, results }))
+    Ok(Json(RarestResp { year, dept, letter, sex, search, results }))
 }
 
 // ---------- /birth-context ----------
@@ -103,7 +114,7 @@ async fn rarest(
 #[derive(Deserialize)]
 pub struct ContextQuery {
     pub year: Option<i32>,
-    pub dept: String,
+    pub dept: Option<String>,
     pub month: Option<u32>,
 }
 
@@ -121,19 +132,21 @@ async fn birth_context(
     Query(q): Query<ContextQuery>,
 ) -> Result<Json<ContextResp>, ApiError> {
     let _year = q.year.unwrap_or(2006);
+    let dept = q.dept.unwrap_or_default().trim().to_string();
     let month = q.month.unwrap_or(5);
 
     let conn = s.pool.get()?;
 
     let month_births: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(count), 0) FROM naissances WHERE dept_nais = ?1 AND mois = ?2",
-        params![q.dept, month],
+        "SELECT COALESCE(SUM(count), 0) FROM naissances
+         WHERE (?1 = '' OR dept_nais = ?1) AND mois = ?2",
+        params![dept, month],
         |row| row.get(0),
     )?;
 
     let year_births: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(count), 0) FROM naissances WHERE dept_nais = ?1",
-        params![q.dept],
+        "SELECT COALESCE(SUM(count), 0) FROM naissances WHERE (?1 = '' OR dept_nais = ?1)",
+        params![dept],
         |row| row.get(0),
     )?;
 
@@ -144,7 +157,7 @@ async fn birth_context(
     };
 
     Ok(Json(ContextResp {
-        dept: q.dept,
+        dept,
         month,
         month_births,
         year_births,

@@ -9,6 +9,8 @@
   let dept = $state("76");
   let month = $state(5);
   let letter = $state("L");
+  let sex = $state<0 | 1 | 2>(0);
+  let search = $state("");
 
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -20,7 +22,7 @@
     error = null;
     try {
       const [r, c] = await Promise.all([
-        fetchRarest({ year, dept, letter, limit: 20 }),
+        fetchRarest({ year, dept, letter, sex, search, limit: 20 }),
         fetchBirthContext({ year, dept, month })
       ]);
       rarest = r;
@@ -43,6 +45,8 @@
     bind:dept
     bind:month
     bind:letter
+    bind:sex
+    bind:search
     {loading}
     onsubmit={run}
   />

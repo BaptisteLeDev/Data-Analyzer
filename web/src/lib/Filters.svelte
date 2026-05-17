@@ -6,6 +6,8 @@
     dept: string;
     month: number;
     letter: string;
+    sex: 0 | 1 | 2;
+    search: string;
     loading: boolean;
     onsubmit: () => void;
   };
@@ -15,6 +17,8 @@
     dept = $bindable(),
     month = $bindable(),
     letter = $bindable(),
+    sex = $bindable(),
+    search = $bindable(),
     loading,
     onsubmit
   }: Props = $props();
@@ -42,9 +46,19 @@
   <div class="field">
     <label for="f-dept">Département</label>
     <select id="f-dept" bind:value={dept}>
+      <option value="">Tous les départements</option>
       {#each DEPARTEMENTS as d}
         <option value={d.code}>{d.code} — {d.nom}</option>
       {/each}
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="f-sex">Sexe</label>
+    <select id="f-sex" bind:value={sex}>
+      <option value={0}>Tous</option>
+      <option value={1}>Masculin</option>
+      <option value={2}>Féminin</option>
     </select>
   </div>
 
@@ -58,7 +72,7 @@
   </div>
 
   <div class="field">
-    <label for="f-letter">Lettre obligatoire</label>
+    <label for="f-letter">Lettre obligatoire <span class="hint">(vide = aucune)</span></label>
     <input
       id="f-letter"
       type="text"
@@ -68,7 +82,18 @@
     />
   </div>
 
-  <button onclick={onsubmit} disabled={loading || !letter}>
+  <div class="field">
+    <label for="f-search">Recherche <span class="hint">(sous-chaîne)</span></label>
+    <input
+      id="f-search"
+      type="text"
+      placeholder="ex : LOU"
+      bind:value={search}
+      oninput={(e) => search = (e.currentTarget as HTMLInputElement).value.toUpperCase()}
+    />
+  </div>
+
+  <button onclick={onsubmit} disabled={loading}>
     {loading ? "Calcul…" : "▶ Lancer"}
   </button>
 </aside>

@@ -20,13 +20,18 @@
     <h3>Contexte démographique</h3>
     <p class="line">
       <strong>{MONTH_NAMES[data.month]} 2006</strong> ·
-      {deptName(data.dept)} ({data.dept})
+      {#if data.dept}
+        {deptName(data.dept)} ({data.dept})
+      {:else}
+        France entière
+      {/if}
     </p>
     <p class="line big">
       <span class="num">{data.month_births.toLocaleString("fr-FR")}</span> naissances
     </p>
     <p class="line muted">
-      {data.share_pct.toLocaleString("fr-FR")}% des {data.year_births.toLocaleString("fr-FR")} naissances annuelles dans ce département
+      {data.share_pct.toLocaleString("fr-FR")}% des {data.year_births.toLocaleString("fr-FR")} naissances annuelles
+      {#if data.dept}dans ce département{:else}sur l'ensemble du territoire{/if}
     </p>
     <p class="footnote">
       Source : INSEE — fichier détail des naissances. Le filtre Mois pilote ce contexte uniquement, il ne ré-ordonne pas la liste des prénoms rares (le fichier prénoms INSEE est agrégé à l'année).

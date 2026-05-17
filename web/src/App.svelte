@@ -4,9 +4,10 @@
   import Results from "./lib/Results.svelte";
   import Context from "./lib/Context.svelte";
   import BirthsTab from "./lib/BirthsTab.svelte";
+  import RaresNatTab from "./lib/RaresNatTab.svelte";
   import { fetchRarest, fetchBirthContext, type RarestResponse, type BirthContext } from "./lib/api";
 
-  let tab = $state<"rares" | "births">("rares");
+  let tab = $state<"rares" | "rares_nat" | "births">("rares");
 
   // ---- Prénoms rares state ----
   let year = $state(2006);
@@ -56,7 +57,8 @@
 <Header />
 
 <nav class="tabs">
-  <button class:active={tab === "rares"} onclick={() => tab = "rares"}>Prénoms rares</button>
+  <button class:active={tab === "rares"} onclick={() => tab = "rares"}>Prénoms rares (dept)</button>
+  <button class:active={tab === "rares_nat"} onclick={() => tab = "rares_nat"}>Rares nationaux</button>
   <button class:active={tab === "births"} onclick={() => tab = "births"}>Naissances 2006</button>
 </nav>
 
@@ -68,6 +70,8 @@
       <Context data={ctx} />
     </div>
   </div>
+{:else if tab === "rares_nat"}
+  <RaresNatTab />
 {:else}
   <BirthsTab />
 {/if}

@@ -95,6 +95,47 @@ export type BirthsResponse = {
 
 export type ForeignFilter = "excl" | "only" | "all";
 
+export type RarestNatRow = {
+  rank: number;
+  prenom: string;
+  sexe: 1 | 2;
+  n: number;
+  dept_count: number;
+};
+
+export type RarestNatResponse = {
+  year: number;
+  letter: string;
+  sex: 0 | 1 | 2;
+  search: string;
+  exclude: string;
+  limit: number;
+  has_more: boolean;
+  censored_count: number;
+  results: RarestNatRow[];
+};
+
+export async function fetchRarestNat(p: {
+  year: number;
+  letter: string;
+  sex?: 0 | 1 | 2;
+  search?: string;
+  exclude?: string;
+  limit?: number;
+}): Promise<RarestNatResponse> {
+  const qs = new URLSearchParams({
+    year: String(p.year),
+    letter: p.letter,
+    limit: String(p.limit ?? 20)
+  });
+  if (p.sex && p.sex !== 0) qs.set("sex", String(p.sex));
+  if (p.search && p.search.trim()) qs.set("search", p.search.trim());
+  if (p.exclude && p.exclude.trim()) qs.set("exclude", p.exclude.trim());
+  const r = await fetch(`${BASE}/rarest-nat?${qs}`);
+  if (!r.ok) throw new Error(`rarest-nat: ${r.status}`);
+  return r.json();
+}
+
 export async function fetchBirths(p: {
   month: number;
   dept: string;

@@ -15,6 +15,35 @@ pub fn router() -> Router<AppState> {
         .route("/birth-context", get(birth_context))
         .route("/births", get(births))
         .route("/intl-search", get(intl_search))
+        .route("/intl-match", get(intl_match))
+}
+
+/// Log EXPLAIN QUERY PLAN at debug level. Useful when adding new queries —
+/// scan over indexed tables shows up as `SCAN <table>` (bad) vs
+/// `SEARCH <table> USING INDEX <name>` (good).
+#[allow(dead_code)]
+pub fn explain_query_plan(conn: &rusqlite::Connection, sql: &str, params: &[&dyn rusqlite::ToSql]) {
+    if !tracing::enabled!(tracing::Level::DEBUG) {
+        return;
+    }
+    let eqp = format!("EXPLAIN QUERY PLAN {sql}");
+    let Ok(mut stmt) = conn.prepare(&eqp) else { return };
+    let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(params.iter()), |r| {
+        Ok(format!(
+            "{}|{}|{}|{}",
+            r.get::<_, i64>(0).unwrap_or(0),
+            r.get::<_, i64>(1).unwrap_or(0),
+            r.get::<_, i64>(2).unwrap_or(0),
+            r.get::<_, String>(3).unwrap_or_default()
+        ))
+    }) else { return };
+    for row in rows.flatten() {
+        if row.contains("SCAN ") && !row.contains("USING INDEX") && !row.contains("USING COVERING") {
+            tracing::warn!("EQP SCAN (no index): {row} for {sql}");
+        } else {
+            tracing::debug!("EQP: {row}");
+        }
+    }
 }
 
 // ---------- /departements ----------
@@ -539,6 +568,8 @@ struct IntlRow {
     prenom: String,
     sex: i32,
     total_us: i64,
+    total_uk: i64,
+    sources: Vec<String>,
     first_year: i32,
     last_year: i32,
     era_count: i64,
@@ -629,11 +660,12 @@ async fn intl_search(
         std::collections::HashSet::new()
     };
 
-    // Step 3: aggregate prenoms_intl — no anti-join in SQL, we do it in Rust
-    // This avoids the correlated subquery scanning 648k rows per intl row.
+    // Step 3: aggregate prenoms_intl — no anti-join in SQL, we do it in Rust.
+    // Split totals by source so UI can show US vs UK counts separately.
     let sql =
         "SELECT prenom, sex,
-                SUM(nombre) AS total,
+                SUM(CASE WHEN source = 'US' THEN nombre ELSE 0 END) AS total_us,
+                SUM(CASE WHEN source = 'UK' THEN nombre ELSE 0 END) AS total_uk,
                 MIN(annee) AS first_y,
                 MAX(annee) AS last_y,
                 SUM(CASE WHEN annee BETWEEN ?3 AND ?4 THEN nombre ELSE 0 END) AS era_cnt
@@ -643,7 +675,7 @@ async fn intl_search(
            AND length(prenom) > 1
          GROUP BY prenom, sex
          HAVING era_cnt > 0
-         ORDER BY total ASC, prenom ASC";
+         ORDER BY (total_us + total_uk) ASC, prenom ASC";
 
     let mut stmt = conn.prepare(sql)?;
     let raw_rows = stmt
@@ -654,9 +686,10 @@ async fn intl_search(
                     row.get::<_, String>(0)?,
                     row.get::<_, i32>(1)?,
                     row.get::<_, i64>(2)?,
-                    row.get::<_, i32>(3)?,
+                    row.get::<_, i64>(3)?,
                     row.get::<_, i32>(4)?,
-                    row.get::<_, i64>(5)?,
+                    row.get::<_, i32>(5)?,
+                    row.get::<_, i64>(6)?,
                 ))
             },
         )?
@@ -668,7 +701,7 @@ async fn intl_search(
     let mut results: Vec<IntlRow> = Vec::new();
     let mut total_after_filter: usize = 0;
 
-    for (prenom, sex_v, total, first_y, last_y, era_cnt) in raw_rows {
+    for (prenom, sex_v, total_us, total_uk, first_y, last_y, era_cnt) in raw_rows {
         // search filter
         if !search.is_empty() && !prenom.contains(&search) {
             continue;
@@ -707,6 +740,11 @@ async fn intl_search(
             }
         }
 
+        // Build sources list from which corpora have data for this name
+        let mut sources: Vec<String> = Vec::new();
+        if total_us > 0 { sources.push("US".to_string()); }
+        if total_uk > 0 { sources.push("UK".to_string()); }
+
         total_after_filter += 1;
 
         if results.len() < (limit + 1) as usize {
@@ -714,7 +752,9 @@ async fn intl_search(
                 rank: 0, // set below
                 prenom,
                 sex: sex_v,
-                total_us: total,
+                total_us,
+                total_uk,
+                sources,
                 first_year: first_y,
                 last_year: last_y,
                 era_count: era_cnt,
@@ -740,6 +780,154 @@ async fn intl_search(
         era_end,
         absent_fr,
         double_variant,
+        limit,
+        has_more,
+        results,
+    }))
+}
+
+// ---------- /intl-match ----------
+//
+// Multi-algo cross-language matching. Given the seed scenario:
+//   "a rare French INSEE name (~25 occurrences) that's the French spelling
+//    of an anglo name from a 90s English-language TV series, one letter
+//    swapped, exactly one 'L'",
+// this runs three independent matchers and merges their results.
+//
+// See `intl_match.rs` for algo details.
+
+#[derive(Deserialize)]
+pub struct IntlMatchQuery {
+    pub letter: Option<String>,
+    pub sex: Option<i32>,
+    pub search: Option<String>,
+    pub exclude: Option<String>,
+    pub era_start: Option<i32>,
+    pub era_end: Option<i32>,
+    /// Total INSEE occurrences (all years) lower bound, default 5
+    pub n_min: Option<i64>,
+    /// Upper bound, default 100
+    pub n_max: Option<i64>,
+    /// "1" to require exactly one 'L' (case-insensitive)
+    pub one_l: Option<String>,
+    /// Max Levenshtein distance; default 2
+    pub lev_max: Option<u32>,
+    /// How many intl seeds to expand on (controls cost). Default 800.
+    pub intl_seed_limit: Option<u32>,
+    /// CSV subset of {phonetic, lev2, anglicisation}; default all three.
+    pub algos: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct IntlMatchRow {
+    rank: usize,
+    prenom: String,
+    matched_by: Vec<&'static str>,
+    score: f64,
+    lev_distance: Option<u32>,
+    from_intl: Vec<String>,
+    anglo_rules: Vec<String>,
+    insee_total: i64,
+    insee_years: i64,
+}
+
+#[derive(Serialize)]
+struct IntlMatchResp {
+    letter: String,
+    sex: i32,
+    n_min: i64,
+    n_max: i64,
+    one_l: bool,
+    lev_max: u32,
+    algos: Vec<String>,
+    intl_seed_limit: u32,
+    limit: i64,
+    has_more: bool,
+    results: Vec<IntlMatchRow>,
+}
+
+async fn intl_match(
+    State(s): State<AppState>,
+    Query(q): Query<IntlMatchQuery>,
+) -> Result<Json<IntlMatchResp>, ApiError> {
+    let letter = q.letter.unwrap_or_default().to_uppercase();
+    let sex = q.sex.filter(|&v| v == 1 || v == 2).unwrap_or(0);
+    let search = q.search.unwrap_or_default().trim().to_uppercase();
+    let exclude = q.exclude.unwrap_or_default().trim().to_uppercase();
+    let era_start = q.era_start.unwrap_or(1985);
+    let era_end = q.era_end.unwrap_or(2005);
+    let n_min = q.n_min.unwrap_or(5);
+    let n_max = q.n_max.unwrap_or(100);
+    let one_l = q.one_l.as_deref() == Some("1");
+    let lev_max = q.lev_max.unwrap_or(2).min(3);
+    let intl_seed_limit = q.intl_seed_limit.unwrap_or(800).min(5000) as usize;
+    let limit = q.limit.unwrap_or(50).min(500) as i64;
+
+    let algos_csv = q.algos.unwrap_or_else(|| "phonetic,lev2,anglicisation".to_string());
+    let use_phonetic = algos_csv.contains("phonetic");
+    let use_lev2 = algos_csv.contains("lev2");
+    let use_anglicisation = algos_csv.contains("anglicisation");
+
+    let params = crate::intl_match::MatchParams {
+        letter: letter.clone(),
+        sex,
+        search,
+        exclude,
+        era_start,
+        era_end,
+        n_min,
+        n_max,
+        one_l,
+        lev_max,
+        intl_seed_limit,
+        limit: (limit as usize) + 1, // peek for has_more
+        use_phonetic,
+        use_lev2,
+        use_anglicisation,
+    };
+
+    // Run on a blocking thread — these algos are CPU-bound (Levenshtein
+    // over ~30k INSEE names × hundreds of seeds).
+    let conn = s.pool.get()?;
+    let matches = tokio::task::spawn_blocking(move || {
+        crate::intl_match::run(&conn, &params)
+    })
+    .await
+    .map_err(|e| ApiError(anyhow::anyhow!("join error: {e}")))??;
+
+    let has_more = matches.len() as i64 > limit;
+    let results: Vec<IntlMatchRow> = matches
+        .into_iter()
+        .take(limit as usize)
+        .enumerate()
+        .map(|(i, m)| IntlMatchRow {
+            rank: i + 1,
+            prenom: m.prenom,
+            matched_by: m.matched_by,
+            score: (m.score * 100.0).round() / 100.0,
+            lev_distance: m.lev_distance,
+            from_intl: m.from_intl,
+            anglo_rules: m.anglo_rules,
+            insee_total: m.insee_total,
+            insee_years: m.insee_years,
+        })
+        .collect();
+
+    let mut algos_used = Vec::new();
+    if use_phonetic { algos_used.push("phonetic".to_string()); }
+    if use_lev2 { algos_used.push("lev2".to_string()); }
+    if use_anglicisation { algos_used.push("anglicisation".to_string()); }
+
+    Ok(Json(IntlMatchResp {
+        letter,
+        sex,
+        n_min,
+        n_max,
+        one_l,
+        lev_max,
+        algos: algos_used,
+        intl_seed_limit: intl_seed_limit as u32,
         limit,
         has_more,
         results,

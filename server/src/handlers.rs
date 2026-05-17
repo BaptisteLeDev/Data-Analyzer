@@ -11,6 +11,7 @@ pub fn router() -> Router<AppState> {
         .route("/departements", get(departements))
         .route("/rarest", get(rarest))
         .route("/birth-context", get(birth_context))
+        .route("/births", get(births))
 }
 
 // ---------- /departements ----------
@@ -161,14 +162,14 @@ async fn birth_context(
     let conn = s.pool.get()?;
 
     let month_births: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(count), 0) FROM naissances
+        "SELECT COUNT(*) FROM naissances
          WHERE (?1 = '' OR dept_nais = ?1) AND mois = ?2",
         params![dept, month],
         |row| row.get(0),
     )?;
 
     let year_births: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(count), 0) FROM naissances WHERE (?1 = '' OR dept_nais = ?1)",
+        "SELECT COUNT(*) FROM naissances WHERE (?1 = '' OR dept_nais = ?1)",
         params![dept],
         |row| row.get(0),
     )?;
@@ -186,4 +187,107 @@ async fn birth_context(
         year_births,
         share_pct,
     }))
+}
+
+// ---------- /births ----------
+
+#[derive(Deserialize)]
+pub struct BirthsQuery {
+    pub month: Option<i32>,
+    pub dept: Option<String>,
+    pub sex: Option<i32>,
+    pub age_mere_min: Option<i32>,
+    pub age_mere_max: Option<i32>,
+    pub age_pere_min: Option<i32>,
+    pub age_pere_max: Option<i32>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct BirthRow {
+    mois: i32,
+    dept_dom: Option<String>,
+    dept_nais: Option<String>,
+    sexe: i32,
+    age_mere: Option<i32>,
+    age_pere: Option<i32>,
+    situ_mere: Option<String>,
+    situ_pere: Option<String>,
+    nat_mere: Option<i32>,
+    nat_pere: Option<i32>,
+    ln_mere: Option<String>,
+    ln_pere: Option<String>,
+    nbenfpre: Option<i32>,
+}
+
+#[derive(Serialize)]
+struct BirthsResp {
+    total: i64,
+    has_more: bool,
+    limit: i64,
+    offset: i64,
+    results: Vec<BirthRow>,
+}
+
+async fn births(
+    State(s): State<AppState>,
+    Query(q): Query<BirthsQuery>,
+) -> Result<Json<BirthsResp>, ApiError> {
+    let dept = q.dept.unwrap_or_default().trim().to_string();
+    let sex = q.sex.filter(|&v| v == 1 || v == 2).unwrap_or(0);
+    let month = q.month.filter(|&m| (1..=12).contains(&m)).unwrap_or(0);
+    let age_mere_min = q.age_mere_min.unwrap_or(0);
+    let age_mere_max = q.age_mere_max.unwrap_or(99);
+    let age_pere_min = q.age_pere_min.unwrap_or(0);
+    let age_pere_max = q.age_pere_max.unwrap_or(99);
+    let limit = q.limit.unwrap_or(50).min(500) as i64;
+    let offset = q.offset.unwrap_or(0) as i64;
+
+    let conn = s.pool.get()?;
+
+    let where_clause = "
+         WHERE (?1 = '' OR dept_nais = ?1)
+           AND (?2 = 0 OR mois = ?2)
+           AND (?3 = 0 OR sexe = ?3)
+           AND (age_mere IS NULL OR age_mere BETWEEN ?4 AND ?5)
+           AND (age_pere IS NULL OR age_pere BETWEEN ?6 AND ?7)";
+
+    let count_sql = format!("SELECT COUNT(*) FROM naissances {}", where_clause);
+    let total: i64 = conn.query_row(
+        &count_sql,
+        params![dept, month, sex, age_mere_min, age_mere_max, age_pere_min, age_pere_max],
+        |row| row.get(0),
+    )?;
+
+    let list_sql = format!(
+        "SELECT mois, dept_dom, dept_nais, sexe, age_mere, age_pere,
+                situ_mere, situ_pere, nat_mere, nat_pere, ln_mere, ln_pere, nbenfpre
+         FROM naissances {} ORDER BY id LIMIT ?8 OFFSET ?9",
+        where_clause
+    );
+    let mut stmt = conn.prepare(&list_sql)?;
+    let rows = stmt
+        .query_map(
+            params![dept, month, sex, age_mere_min, age_mere_max, age_pere_min, age_pere_max, limit, offset],
+            |row| Ok(BirthRow {
+                mois: row.get(0)?,
+                dept_dom: row.get(1)?,
+                dept_nais: row.get(2)?,
+                sexe: row.get(3)?,
+                age_mere: row.get(4)?,
+                age_pere: row.get(5)?,
+                situ_mere: row.get(6)?,
+                situ_pere: row.get(7)?,
+                nat_mere: row.get(8)?,
+                nat_pere: row.get(9)?,
+                ln_mere: row.get(10)?,
+                ln_pere: row.get(11)?,
+                nbenfpre: row.get(12)?,
+            }),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let has_more = offset + limit < total;
+    Ok(Json(BirthsResp { total, has_more, limit, offset, results: rows }))
 }

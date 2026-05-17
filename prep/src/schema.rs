@@ -8,6 +8,7 @@ pub fn create(conn: &Connection) -> Result<()> {
         DROP TABLE IF EXISTS prenoms_nat;
         DROP TABLE IF EXISTS naissances;
         DROP TABLE IF EXISTS departements;
+        DROP TABLE IF EXISTS prenoms_intl;
 
         CREATE TABLE departements (
             code TEXT PRIMARY KEY,
@@ -48,6 +49,13 @@ pub fn create(conn: &Connection) -> Result<()> {
             dmarnais  TEXT,
             tudom     TEXT
         );
+
+        CREATE TABLE prenoms_intl (
+            prenom TEXT NOT NULL,
+            sex    INTEGER NOT NULL,  -- 1=M, 2=F
+            annee  INTEGER NOT NULL,
+            nombre INTEGER NOT NULL
+        );
         ",
     )?;
     Ok(())
@@ -63,6 +71,8 @@ pub fn index(conn: &Connection) -> Result<()> {
         CREATE INDEX idx_nais_dept_mois       ON naissances(dept_nais, mois);
         CREATE INDEX idx_nais_age_mere        ON naissances(age_mere);
         CREATE INDEX idx_nais_age_pere        ON naissances(age_pere);
+        CREATE INDEX idx_intl_prenom          ON prenoms_intl(prenom);
+        CREATE INDEX idx_intl_annee           ON prenoms_intl(annee);
         ",
     )?;
     Ok(())

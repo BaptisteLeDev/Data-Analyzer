@@ -10,6 +10,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/departements", get(departements))
         .route("/rarest", get(rarest))
+        .route("/rarest-nat", get(rarest_nat))
         .route("/birth-context", get(birth_context))
         .route("/births", get(births))
 }
@@ -301,4 +302,105 @@ async fn births(
 
     let has_more = offset + limit < total;
     Ok(Json(BirthsResp { total, has_more, limit, offset, results: rows }))
+}
+
+// ---------- /rarest-nat ----------
+
+#[derive(Deserialize)]
+pub struct RarestNatQuery {
+    pub year: Option<i32>,
+    pub letter: Option<String>,
+    pub sex: Option<i32>,
+    pub search: Option<String>,
+    pub exclude: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct RarestNatRow {
+    rank: usize,
+    prenom: String,
+    sexe: i32,
+    n: i64,
+    dept_count: i64,
+}
+
+#[derive(Serialize)]
+struct RarestNatResp {
+    year: i32,
+    letter: String,
+    sex: i32,
+    search: String,
+    exclude: String,
+    limit: i64,
+    has_more: bool,
+    censored_count: i64,
+    results: Vec<RarestNatRow>,
+}
+
+async fn rarest_nat(
+    State(s): State<AppState>,
+    Query(q): Query<RarestNatQuery>,
+) -> Result<Json<RarestNatResp>, ApiError> {
+    let year = q.year.unwrap_or(2006);
+    let letter = q.letter.unwrap_or_default().to_uppercase();
+    let letter_pattern = if letter.is_empty() { "%".to_string() } else { format!("%{}%", letter) };
+    let sex = q.sex.filter(|&v| v == 1 || v == 2).unwrap_or(0);
+    let search = q.search.unwrap_or_default().trim().to_uppercase();
+    let search_pattern = format!("%{}%", search);
+    let exclude = q.exclude.unwrap_or_default().trim().to_uppercase();
+    let exclude_pattern = format!("%{}%", exclude);
+    let limit = q.limit.unwrap_or(20).min(500) as i64;
+
+    let conn = s.pool.get()?;
+    let mut stmt = conn.prepare(
+        "SELECT prenom, sexe, nombre,
+                (SELECT COUNT(DISTINCT dept) FROM prenoms p2
+                  WHERE p2.annee = prenoms_nat.annee
+                    AND p2.prenom = prenoms_nat.prenom
+                    AND p2.sexe = prenoms_nat.sexe) AS dept_count
+         FROM prenoms_nat
+         WHERE annee = ?1
+           AND UPPER(prenom) LIKE ?2
+           AND (?3 = 0 OR sexe = ?3)
+           AND (?4 = '' OR UPPER(prenom) LIKE ?5)
+           AND (?6 = '' OR UPPER(prenom) NOT LIKE ?7)
+           AND prenom NOT IN ('_PRENOMS_RARES', 'XXXX')
+           AND length(prenom) > 1
+         ORDER BY nombre ASC, prenom ASC
+         LIMIT ?8",
+    )?;
+    let rows = stmt
+        .query_map(
+            params![year, letter_pattern, sex, search, search_pattern, exclude, exclude_pattern, limit + 1],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i32>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+            )),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let has_more = rows.len() as i64 > limit;
+    let results: Vec<RarestNatRow> = rows
+        .into_iter()
+        .take(limit as usize)
+        .enumerate()
+        .map(|(i, (prenom, sexe, n, dept_count))| RarestNatRow {
+            rank: i + 1, prenom, sexe, n, dept_count,
+        })
+        .collect();
+
+    let censored_count: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(nombre), 0)
+         FROM prenoms_nat
+         WHERE annee = ?1 AND (?2 = 0 OR sexe = ?2) AND prenom = '_PRENOMS_RARES'",
+        params![year, sex],
+        |row| row.get(0),
+    )?;
+
+    Ok(Json(RarestNatResp {
+        year, letter, sex, search, exclude, limit, has_more, censored_count, results,
+    }))
 }

@@ -1,11 +1,12 @@
 <header>
   <div class="brand">
-    <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
-      <rect x="0" y="0" width="16" height="48" fill="#000091" />
-      <rect x="16" y="0" width="16" height="48" fill="#FFFFFF" />
-      <rect x="32" y="0" width="16" height="48" fill="#E1000F" />
-      <text x="24" y="32" text-anchor="middle" font-family="Marianne, Inter, sans-serif"
-            font-size="20" font-weight="700" fill="#161616">DA</text>
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" fill="#000091"/>
+      <rect x="11" y="42" width="8" height="14" fill="#FFFFFF"/>
+      <rect x="22" y="32" width="8" height="24" fill="#FFFFFF"/>
+      <rect x="33" y="22" width="8" height="34" fill="#FFFFFF"/>
+      <rect x="44" y="10" width="8" height="46" fill="#E1000F"/>
+      <rect x="11" y="56" width="41" height="2" fill="#FFFFFF"/>
     </svg>
     <div class="titles">
       <span class="name">DATA-ANALYZER</span>
@@ -22,9 +23,9 @@
   }
   .brand { display: flex; align-items: center; gap: calc(var(--space) * 2); }
   .logo {
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--border);
+    width: 44px;
+    height: 44px;
+    display: block;
   }
   .titles { display: flex; flex-direction: column; line-height: 1.2; }
   .name {
